@@ -5,12 +5,22 @@ const qrForm = document.getElementById('qr-form');
 const qrContainer = document.getElementById('qrcode');
 const jsonPreview = document.getElementById('json-preview');
 
-const excelInput = document.getElementById('excel-file');
 const excelStatus = document.getElementById('excel-status');
 const decodedDataEl = document.getElementById('decoded-data');
 const validationResultEl = document.getElementById('validation-result');
 const startScanBtn = document.getElementById('start-scan');
 const stopScanBtn = document.getElementById('stop-scan');
+
+const DEFAULT_ASSOCIATES_FILE = 'data/asociados.csv';
+const ASSOCIATE_INVALID_MESSAGE = 'asociado inexistente o no está la día';
+const DEFAULT_ASSOCIATES_FALLBACK = [
+  {
+    'Código asociado': '130',
+    'Nombre completo': 'James Abraham Flores Medina',
+    Etapa: '8',
+    Estado: 'Activo',
+  },
+];
 
 let asociados = [];
 let scanner = null;
@@ -59,7 +69,7 @@ function isActiveStatus(status) {
 
 function validateAssociate(decodedObj) {
   if (!asociados.length) {
-    setValidationMessage('Primero debes subir una base de datos en Excel.', 'error');
+    setValidationMessage('No se pudo cargar la base de asociados.', 'error');
     return;
   }
 
@@ -70,16 +80,8 @@ function validateAssociate(decodedObj) {
   }
 
   const asociado = asociados.find((item) => item.codigo === codigoBuscado);
-  if (!asociado) {
-    setValidationMessage(`No existe asociado con código ${codigoBuscado}.`, 'error');
-    return;
-  }
-
-  if (!isActiveStatus(asociado.estado)) {
-    setValidationMessage(
-      `Asociado encontrado (${codigoBuscado}), pero su estado es "${asociado.estado || 'no definido'}".`,
-      'error',
-    );
+  if (!asociado || !isActiveStatus(asociado.estado)) {
+    setValidationMessage(ASSOCIATE_INVALID_MESSAGE, 'error');
     return;
   }
 
@@ -98,6 +100,60 @@ function decodeQrText(text) {
 
   decodedDataEl.textContent = JSON.stringify(parsed, null, 2);
   validateAssociate(parsed);
+}
+
+function parseCsvRows(content) {
+  const lines = String(content)
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return [];
+
+  const headers = lines[0].split(',').map((header) => header.trim());
+
+  return lines.slice(1).map((line) => {
+    const values = line.split(',').map((value) => value.trim());
+    return headers.reduce((acc, header, index) => {
+      acc[header] = values[index] ?? '';
+      return acc;
+    }, {});
+  });
+}
+
+async function fetchWithTimeout(url, timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function loadAssociatesFile() {
+  try {
+    const response = await fetchWithTimeout(DEFAULT_ASSOCIATES_FILE);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const fileContent = await response.text();
+    const rows = parseCsvRows(fileContent);
+
+    asociados = rows.map(parseExcelRow).filter((item) => item.codigo);
+
+    if (!asociados.length) {
+      throw new Error('archivo sin registros válidos');
+    }
+
+    excelStatus.textContent = `Base cargada desde ${DEFAULT_ASSOCIATES_FILE}. Registros con código: ${asociados.length}.`;
+  } catch (error) {
+    asociados = DEFAULT_ASSOCIATES_FALLBACK.map(parseExcelRow).filter((item) => item.codigo);
+
+    excelStatus.textContent = `No se pudo leer ${DEFAULT_ASSOCIATES_FILE}; usando base incluida. Registros con código: ${asociados.length}.`;
+    setValidationMessage('Usando base de respaldo local para validar asociados.');
+  }
 }
 
 function stopScanner() {
@@ -140,25 +196,6 @@ qrForm.addEventListener('submit', (event) => {
   jsonPreview.textContent = JSON.stringify(payload, null, 2);
 });
 
-excelInput.addEventListener('change', async (event) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-
-  try {
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array' });
-    const firstSheet = workbook.SheetNames[0];
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: '' });
-
-    asociados = rows.map(parseExcelRow).filter((item) => item.codigo);
-    excelStatus.textContent = `Archivo cargado: ${file.name}. Registros con código: ${asociados.length}.`;
-  } catch (error) {
-    asociados = [];
-    excelStatus.textContent = `No se pudo leer el archivo: ${error.message}`;
-    setValidationMessage('Error al procesar Excel.', 'error');
-  }
-});
-
 startScanBtn.addEventListener('click', async () => {
   try {
     if (!scanner) scanner = new Html5Qrcode('reader');
@@ -186,3 +223,5 @@ stopScanBtn.addEventListener('click', () => {
   stopScanner();
   setValidationMessage('Escaneo detenido.');
 });
+
+loadAssociatesFile();
