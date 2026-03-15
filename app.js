@@ -5,12 +5,14 @@ const qrForm = document.getElementById('qr-form');
 const qrContainer = document.getElementById('qrcode');
 const jsonPreview = document.getElementById('json-preview');
 
-const excelInput = document.getElementById('excel-file');
 const excelStatus = document.getElementById('excel-status');
 const decodedDataEl = document.getElementById('decoded-data');
 const validationResultEl = document.getElementById('validation-result');
 const startScanBtn = document.getElementById('start-scan');
 const stopScanBtn = document.getElementById('stop-scan');
+
+const DEFAULT_ASSOCIATES_FILE = 'data/asociados.csv';
+const ASSOCIATE_INVALID_MESSAGE = 'asociado inexistente o no está la día';
 
 let asociados = [];
 let scanner = null;
@@ -59,7 +61,7 @@ function isActiveStatus(status) {
 
 function validateAssociate(decodedObj) {
   if (!asociados.length) {
-    setValidationMessage('Primero debes subir una base de datos en Excel.', 'error');
+    setValidationMessage('No se pudo cargar la base de asociados.', 'error');
     return;
   }
 
@@ -70,16 +72,8 @@ function validateAssociate(decodedObj) {
   }
 
   const asociado = asociados.find((item) => item.codigo === codigoBuscado);
-  if (!asociado) {
-    setValidationMessage(`No existe asociado con código ${codigoBuscado}.`, 'error');
-    return;
-  }
-
-  if (!isActiveStatus(asociado.estado)) {
-    setValidationMessage(
-      `Asociado encontrado (${codigoBuscado}), pero su estado es "${asociado.estado || 'no definido'}".`,
-      'error',
-    );
+  if (!asociado || !isActiveStatus(asociado.estado)) {
+    setValidationMessage(ASSOCIATE_INVALID_MESSAGE, 'error');
     return;
   }
 
@@ -98,6 +92,25 @@ function decodeQrText(text) {
 
   decodedDataEl.textContent = JSON.stringify(parsed, null, 2);
   validateAssociate(parsed);
+}
+
+async function loadAssociatesFile() {
+  try {
+    const response = await fetch(DEFAULT_ASSOCIATES_FILE);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const fileContent = await response.text();
+    const workbook = XLSX.read(fileContent, { type: 'string' });
+    const firstSheet = workbook.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: '' });
+
+    asociados = rows.map(parseExcelRow).filter((item) => item.codigo);
+    excelStatus.textContent = `Base cargada desde ${DEFAULT_ASSOCIATES_FILE}. Registros con código: ${asociados.length}.`;
+  } catch (error) {
+    asociados = [];
+    excelStatus.textContent = `No se pudo cargar la base por defecto: ${error.message}`;
+    setValidationMessage('No se pudo cargar la base de asociados.', 'error');
+  }
 }
 
 function stopScanner() {
@@ -140,25 +153,6 @@ qrForm.addEventListener('submit', (event) => {
   jsonPreview.textContent = JSON.stringify(payload, null, 2);
 });
 
-excelInput.addEventListener('change', async (event) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-
-  try {
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array' });
-    const firstSheet = workbook.SheetNames[0];
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: '' });
-
-    asociados = rows.map(parseExcelRow).filter((item) => item.codigo);
-    excelStatus.textContent = `Archivo cargado: ${file.name}. Registros con código: ${asociados.length}.`;
-  } catch (error) {
-    asociados = [];
-    excelStatus.textContent = `No se pudo leer el archivo: ${error.message}`;
-    setValidationMessage('Error al procesar Excel.', 'error');
-  }
-});
-
 startScanBtn.addEventListener('click', async () => {
   try {
     if (!scanner) scanner = new Html5Qrcode('reader');
@@ -186,3 +180,5 @@ stopScanBtn.addEventListener('click', () => {
   stopScanner();
   setValidationMessage('Escaneo detenido.');
 });
+
+loadAssociatesFile();
