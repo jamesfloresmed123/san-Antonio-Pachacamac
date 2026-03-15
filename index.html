@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Validación de Asociados con QR</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+    <script src="https://unpkg.com/html5-qrcode" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="container">
+      <h1>Módulo QR de Asociados</h1>
+
+      <nav class="tabs" aria-label="Módulos">
+        <button class="tab-button active" data-tab="generar">Generar QR</button>
+        <button class="tab-button" data-tab="validar">Escanear y validar</button>
+      </nav>
+
+      <section id="generar" class="tab-panel active">
+        <h2>Generar código QR</h2>
+        <form id="qr-form" class="card">
+          <label>
+            Código de asociado
+            <input type="text" id="codigo" required />
+          </label>
+
+          <label>
+            Nombre completo
+            <input type="text" id="nombre" required />
+          </label>
+
+          <label>
+            Etapa
+            <input type="text" id="etapa" required />
+          </label>
+
+          <button type="submit">Generar QR</button>
+        </form>
+
+        <div class="card result-card">
+          <h3>Resultado</h3>
+          <p id="json-preview" class="muted">Completa el formulario para generar el QR.</p>
+          <div id="qrcode"></div>
+        </div>
+      </section>
+
+      <section id="validar" class="tab-panel">
+        <h2>Escanear y validar asociado</h2>
+
+        <div class="card">
+          <label>
+            Subir Excel de asociados (base de datos)
+            <input type="file" id="excel-file" accept=".xlsx,.xls,.csv" />
+          </label>
+          <p id="excel-status" class="muted">No se ha cargado ningún archivo.</p>
+        </div>
+
+        <div class="card">
+          <button id="start-scan">Iniciar cámara y escaneo</button>
+          <button id="stop-scan" class="secondary" disabled>Detener escaneo</button>
+          <div id="reader"></div>
+        </div>
+
+        <div class="card result-card">
+          <h3>Datos decodificados</h3>
+          <pre id="decoded-data" class="decoded">Aún no se ha escaneado ningún código.</pre>
+          <p id="validation-result" class="status">Pendiente de validación.</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
