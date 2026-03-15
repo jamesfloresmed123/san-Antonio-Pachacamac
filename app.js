@@ -13,6 +13,14 @@ const stopScanBtn = document.getElementById('stop-scan');
 
 const DEFAULT_ASSOCIATES_FILE = 'data/asociados.csv';
 const ASSOCIATE_INVALID_MESSAGE = 'asociado inexistente o no está la día';
+const DEFAULT_ASSOCIATES_FALLBACK = [
+  {
+    'Código asociado': '130',
+    'Nombre completo': 'James Abraham Flores Medina',
+    Etapa: '8',
+    Estado: 'Activo',
+  },
+];
 
 let asociados = [];
 let scanner = null;
@@ -94,22 +102,57 @@ function decodeQrText(text) {
   validateAssociate(parsed);
 }
 
+function parseCsvRows(content) {
+  const lines = String(content)
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return [];
+
+  const headers = lines[0].split(',').map((header) => header.trim());
+
+  return lines.slice(1).map((line) => {
+    const values = line.split(',').map((value) => value.trim());
+    return headers.reduce((acc, header, index) => {
+      acc[header] = values[index] ?? '';
+      return acc;
+    }, {});
+  });
+}
+
+async function fetchWithTimeout(url, timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function loadAssociatesFile() {
   try {
-    const response = await fetch(DEFAULT_ASSOCIATES_FILE);
+    const response = await fetchWithTimeout(DEFAULT_ASSOCIATES_FILE);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const fileContent = await response.text();
-    const workbook = XLSX.read(fileContent, { type: 'string' });
-    const firstSheet = workbook.SheetNames[0];
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: '' });
+    const rows = parseCsvRows(fileContent);
 
     asociados = rows.map(parseExcelRow).filter((item) => item.codigo);
+
+    if (!asociados.length) {
+      throw new Error('archivo sin registros válidos');
+    }
+
     excelStatus.textContent = `Base cargada desde ${DEFAULT_ASSOCIATES_FILE}. Registros con código: ${asociados.length}.`;
   } catch (error) {
-    asociados = [];
-    excelStatus.textContent = `No se pudo cargar la base por defecto: ${error.message}`;
-    setValidationMessage('No se pudo cargar la base de asociados.', 'error');
+    asociados = DEFAULT_ASSOCIATES_FALLBACK.map(parseExcelRow).filter((item) => item.codigo);
+
+    excelStatus.textContent = `No se pudo leer ${DEFAULT_ASSOCIATES_FILE}; usando base incluida. Registros con código: ${asociados.length}.`;
+    setValidationMessage('Usando base de respaldo local para validar asociados.');
   }
 }
 
